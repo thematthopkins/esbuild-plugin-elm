@@ -184,33 +184,37 @@ module.exports = (config = {}) => ({
     const loadPaths = await getLoadPaths(cwd);
 
     build.onResolve({ filter: fileFilter }, async (args) => {
-      const resolvedPath = await resolvePath(args.resolveDir, args.path, loadPaths);
-      const resolvedDependencies = await elmCompiler.findAllDependencies(resolvedPath);
+      try {
+        const resolvedPath = await resolvePath(args.resolveDir, args.path, loadPaths);
+        const resolvedDependencies = await elmCompiler.findAllDependencies(resolvedPath);
 
-      if (!await fileExists(resolvedPath)) {
-        // sometimes elm format re-creates the entrypoint file.
-        // If you keep updating Main.elm, elm-format will eventually re-create
-        // while compilation is running, and this will crash w/ an ENOENT, and require
-        // esbuild to restart.
-        //
-        // Instead, skip over dependencies, and just assume the entrypoint is the only
-        // thing we care about when the entrypoint doesn't exist.
-        return {
+        // I think we need to update deps on each resolve because you might
+        // change your imports on every build
+        updateDependencies(cache, resolvedPath, resolvedDependencies);
+
+        return ({
           path: resolvedPath,
           namespace,
-          watchFiles: [resolvedPath],
-        };
+          watchFiles: [resolvedPath, ...resolvedDependencies],
+        });
+      } catch (e) {
+        if(e.code == 'ENOENT') {
+          const resolvedPath = await resolvePath(args.resolveDir, args.path, loadPaths);
+          // sometimes elm format re-creates the entrypoint file.
+          // If you keep updating Main.elm, elm-format will eventually re-create
+          // while compilation is running, and this will crash w/ an ENOENT, and require
+          // esbuild to restart.
+          //
+          // Instead, skip over dependencies, and just assume the entrypoint is the only
+          // thing we care about when the entrypoint doesn't exist.
+          return {
+            path: resolvedPath,
+            namespace,
+            watchFiles: [resolvedPath],
+          };
+        }
+        throw e;
       }
-
-      // I think we need to update deps on each resolve because you might
-      // change your imports on every build
-      updateDependencies(cache, resolvedPath, resolvedDependencies);
-
-      return ({
-        path: resolvedPath,
-        namespace,
-        watchFiles: [resolvedPath, ...resolvedDependencies],
-      });
     });
 
     build.onLoad({ filter: /.*/, namespace }, async (args) => {
