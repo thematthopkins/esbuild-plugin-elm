@@ -184,22 +184,24 @@ module.exports = (config = {}) => ({
     const loadPaths = await getLoadPaths(cwd);
 
     build.onResolve({ filter: fileFilter }, async (args) => {
-      try {
-        const resolvedPath = await resolvePath(args.resolveDir, args.path, loadPaths);
-        const resolvedDependencies = await elmCompiler.findAllDependencies(resolvedPath);
-
-        // I think we need to update deps on each resolve because you might
-        // change your imports on every build
-        updateDependencies(cache, resolvedPath, resolvedDependencies);
-
-        return ({
-          path: resolvedPath,
-          namespace,
-          watchFiles: [resolvedPath, ...resolvedDependencies],
-        });
-      } catch (e) {
-        if(e.code == 'ENOENT') {
+      for (let i = 0;; i++) {
+        try {
           const resolvedPath = await resolvePath(args.resolveDir, args.path, loadPaths);
+          const resolvedDependencies = await elmCompiler.findAllDependencies(resolvedPath);
+
+          // I think we need to update deps on each resolve because you might
+          // change your imports on every build
+          updateDependencies(cache, resolvedPath, resolvedDependencies);
+
+          return ({
+            path: resolvedPath,
+            namespace,
+            watchFiles: [resolvedPath, ...resolvedDependencies],
+          });
+        } catch (e) {
+          if(i >= 20){
+            throw e;
+          }
           // sometimes elm format re-creates the entrypoint file.
           // If you keep updating Main.elm, elm-format will eventually re-create
           // while compilation is running, and this will crash w/ an ENOENT, and require
@@ -207,15 +209,15 @@ module.exports = (config = {}) => ({
           //
           // Instead, skip over dependencies, and just assume the entrypoint is the only
           // thing we care about when the entrypoint doesn't exist.
-          return {
-            path: resolvedPath,
-            namespace,
-            watchFiles: [resolvedPath],
-          };
+          if(e.code == 'ENOENT') {
+            await new Promise(r => setTimeout(r, 50));
+          } else {
+            throw e;
+          }
         }
-        throw e;
       }
     });
+
 
     build.onLoad({ filter: /.*/, namespace }, async (args) => {
       if (clearOnWatch) {
