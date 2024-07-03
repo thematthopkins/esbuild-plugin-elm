@@ -200,6 +200,7 @@ module.exports = (config = {}) => ({
           });
         } catch (e) {
           if(i >= 20){
+            console.log('gave up resolving file', e);
             throw e;
           }
           // sometimes elm format re-creates the entrypoint file.
@@ -210,8 +211,10 @@ module.exports = (config = {}) => ({
           // Instead, skip over dependencies, and just assume the entrypoint is the only
           // thing we care about when the entrypoint doesn't exist.
           if(e.code == 'ENOENT') {
+            console.log('ENOENT - waiting and trying again', e);
             await new Promise(r => setTimeout(r, 50));
           } else {
+            console.log('other error - giving up', e);
             throw e;
           }
         }
